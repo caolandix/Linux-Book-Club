@@ -2,7 +2,7 @@ import urllib2
 import socket
 import time
 from collections import defaultdict
-
+from concurrent import futures
 
 """
 Function Name: download_file
@@ -44,12 +44,16 @@ Inputs:
     - map_user_agents: a map of the user-agents and their counts
 Outputs: n/a
 Notes: 
-"""
+"""    
 def output_top_five(map_disallow, map_user_agents):
-    sorted_disallowed = sorted(map_disallow.values())
-    sorted_user_agents = sorted(map_user_agents.values())
-    first5_disallowed = {i: sorted_disallowed[i] for i in sorted_disallowed.keys()[:5]}
-    first5_user_agents = {i: sorted_user_agents[i] for i in sorted_user_agents.keys()[:5]}
+    first5_disallowed = []
+    first5_user_agents = []
+    sorted_disallowed = sorted(map_disallow.values(), reverse = True)
+    sorted_user_agents = sorted(map_user_agents.values(), reverse = True)
+    if len (sorted_disallowed) >= 5 and len (sorted_user_agents) >= 5:
+        for i in range(0, 5):
+            first5_disallowed.append(sorted_disallowed[i])
+            first5_user_agents.append(sorted_user_agents[i])
 
     print "The top five disallowed are: "
     print sorted_disallowed.index
@@ -86,20 +90,62 @@ def build_maps(domain_list):
     robots_file = "robots.txt"
     
     print "Reading domain list..."
-    for domain in domain_list:
-        
-        print "Processing http://%s/%s" % (domain, robots_file)
-        download_file(domain, robots_file)
-        with open(robots_file) as f:
-            content = f.readlines()
-        robots_lines = [item.strip() for item in content]
-        for line in robots_lines:
-            if "user-agent: " in line.lower():
-                useragent_map[line] += 1
-            elif "disallow: " in line.lower():
-                disallow_map[line] += 1    
-    return (disallow_map, useragent_map)
     
+    with futures.ThreadPoolExecutor(max_workers = 10) as executor:
+        i = 0
+        tmp_disallow_map = {}
+        tmp_useragent_map = {}
+        for domain in domain_list:
+            
+            print "Processing http://%s/%s" % (domain, robots_file)
+            executor.submit(process_robots_file, domain, tmp_disallow_map, tmp_useragent_map)
+            
+            # merge the tmp maps with the main
+            for key in tmp_disallow_map:
+                if key not in disallow_map.keys():
+                    disallow_map[key] = tmp_disallow_map[key]
+                else:
+                    disallow_map[key] += tmp_disallow_map[key]
+            for key in tmp_useragent_map:
+                if key not in useragent_map.keys():
+                    useragent_map[key] = tmp_useragent_map[key]
+                else:
+                    useragent_map[key] += tmp_useragent_map[key]
+            tmp_disallow_map = {}
+            tmp_useragent_map = {}
+            i += 1
+            if i >= 50:
+                break;
+    return (disallow_map, useragent_map)
+
+"""
+Function Name: process_robots_file
+Purpose: The thread function used in build_maps() that downloads the robots.txt file and then scans through it putting the user-agent and disallow strings into the associated dictionaries
+Inputs:
+    - domain: the domain being worked on
+    - disallow_map: disallow_map
+    - useragent_map: useragent_map
+Outputs: n/a
+Notes: 
+"""
+def process_robots_file(domain, disallow_map, useragent_map):
+    robots_file = domain + ".robots.txt"
+    download_file(domain, "robots.txt")
+    with open(robots_file) as f:
+        content = f.readlines()
+    robots_lines = [item.strip() for item in content]
+    for line in robots_lines:
+        if "user-agent: " in line.lower():
+            if line not in useragent_map.keys():
+                useragent_map[line] = 1
+            else:
+                useragent_map[line] += 1
+        elif "disallow: " in line.lower():
+            if line not in disallow_map.keys():
+                disallow_map[line] = 1
+            else:
+                disallow_map[line] += 1
+
 """
 Function Name: run
 Purpose: execution happens in this scope
@@ -118,6 +164,8 @@ def run():
     start_time = time.time()
     (disallow, user_agents) = build_maps(domains)
     end_time = time.time()
+    
+    print "Total time it took for execution: %sm" % str((end_time - start_time) / 60)
     
     # Output the top items
     output_top_five(disallow, user_agents)

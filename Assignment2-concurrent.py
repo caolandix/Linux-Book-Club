@@ -46,20 +46,10 @@ Outputs: n/a
 Notes: 
 """    
 def output_top_five(map_disallow, map_user_agents):
-    first5_disallowed = []
-    first5_user_agents = []
-    sorted_disallowed = sorted(map_disallow.values(), reverse = True)
-    sorted_user_agents = sorted(map_user_agents.values(), reverse = True)
-    if len (sorted_disallowed) >= 5 and len (sorted_user_agents) >= 5:
-        for i in range(0, 5):
-            first5_disallowed.append(sorted_disallowed[i])
-            first5_user_agents.append(sorted_user_agents[i])
-
     print "The top five disallowed are: "
-    print sorted_disallowed.index
-
+    print sorted(map_disallow, key=map_disallow.get, reverse=True)[:5]
     print "The top five user-agents are: "
-    print sorted_disallowed.index
+    print sorted(map_user_agents, key=map_user_agents.get, reverse=True)[:5]
 
 """
 Function Name: read_domainlist_into_list
@@ -91,10 +81,9 @@ def build_maps(domain_list):
     
     print "Reading domain list..."
     
-    with futures.ThreadPoolExecutor(max_workers = 10) as executor:
-        i = 0
-        tmp_disallow_map = {}
-        tmp_useragent_map = {}
+    with futures.ThreadPoolExecutor(max_workers = 5) as executor:
+        tmp_disallow_map = defaultdict(int)
+        tmp_useragent_map = defaultdict(int)
         for domain in domain_list:
             
             print "Processing http://%s/%s" % (domain, robots_file)
@@ -111,11 +100,8 @@ def build_maps(domain_list):
                     useragent_map[key] = tmp_useragent_map[key]
                 else:
                     useragent_map[key] += tmp_useragent_map[key]
-            tmp_disallow_map = {}
-            tmp_useragent_map = {}
-            i += 1
-            if i >= 50:
-                break;
+            tmp_disallow_map = defaultdict(int)
+            tmp_useragent_map = defaultdict(int)
     return (disallow_map, useragent_map)
 
 """
@@ -129,8 +115,8 @@ Outputs: n/a
 Notes: 
 """
 def process_robots_file(domain, disallow_map, useragent_map):
-    robots_file = domain + ".robots.txt"
-    download_file(domain, "robots.txt")
+    robots_file = "robots.txt"
+    download_file(domain, robots_file)
     with open(robots_file) as f:
         content = f.readlines()
     robots_lines = [item.strip() for item in content]
